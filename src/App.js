@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import Login from './components/Login';
-import Trading from './components/Trading';
-import Admin from './components/Admin';
+import Login from './Components/Login';
+import Trading from './Components/Trading';
+import Admin from './Components/Admin';
 import './App.css';
 import { db } from './firebase'; 
 import { collection, onSnapshot } from 'firebase/firestore';
