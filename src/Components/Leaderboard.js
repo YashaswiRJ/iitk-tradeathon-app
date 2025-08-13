@@ -1,32 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import React from 'react';
+import './Leaderboard.css';
 
-const Leaderboard = () => {
-    const [users, setUsers] = useState([]);
-
-    useEffect(() => {
-        const q = query(collection(db, "users"), orderBy("score", "desc"));
-        const unsub = onSnapshot(q, (querySnapshot) => {
-            const usersData = [];
-            querySnapshot.forEach((doc) => {
-                usersData.push({ id: doc.id, ...doc.data() });
-            });
-            setUsers(usersData);
-        });
-        return () => unsub();
-    }, []);
+const Leaderboard = ({ allPlayers, currentUser }) => {
+    // Sort players from props by PNL in descending order
+    const sortedPlayers = [...allPlayers].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
 
     return (
-        <div style={{ padding: '20px' }}>
-            <h1 style={{ textAlign: 'center' }}>Leaderboard</h1>
-            <ol>
-                {users.map((user, index) => (
-                    <li key={user.id} style={{ fontSize: '1.2em', padding: '5px' }}>
-                        {user.name}: {user.score.toFixed(2)}
-                    </li>
-                ))}
-            </ol>
+        <div className="leaderboard-container">
+            <h3 className="leaderboard-title">Leaderboard</h3>
+            <ul className="leaderboard-list">
+                {sortedPlayers.length > 0 ? sortedPlayers.map((player, index) => {
+                    // Defensive check: Use 0 as a fallback for PNL if it's undefined or null.
+                    const playerPnl = player.pnl || 0;
+                    
+                    return (
+                        <li key={player.id} className={`leaderboard-item ${currentUser && player.name === currentUser.name ? 'current-user' : ''}`}>
+                            <span className="leaderboard-rank">{index + 1}</span>
+                            <span className="leaderboard-name">{player.name}</span>
+                            <span className={`leaderboard-pnl ${playerPnl >= 0 ? 'positive' : 'negative'}`}>
+                                {playerPnl.toFixed(2)}
+                            </span>
+                        </li>
+                    );
+                }) : (
+                    <li className="no-players">No players have joined yet.</li>
+                )}
+            </ul>
         </div>
     );
 };

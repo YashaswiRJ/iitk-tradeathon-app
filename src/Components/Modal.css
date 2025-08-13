@@ -1,0 +1,48 @@
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: #2c2c2e;
+    padding: 25px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 350px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    border: 1px solid #3a3a3c;
+}
+
+.modal-content h2 {
+    margin: 0 0 10px 0;
+    text-align: center;
+}
+
+.modal-input {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #3a3a3c;
+    background-color: #1c1c1e;
+    color: #fff;
+    font-size: 1em;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.cancel-btn {
+    background-color: #555;
+}

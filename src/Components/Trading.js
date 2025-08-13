@@ -1,98 +1,168 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import './Trading.css';
+import './Modal.css';
+import Leaderboard from './Leaderboard';
 import { db } from '../firebase';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 
-const Trading = () => {
-    const [price, setPrice] = useState(100);
-    const [userData, setUserData] = useState(null);
-    const userId = localStorage.getItem('userId');
-
-    useEffect(() => {
-        const priceInterval = setInterval(() => {
-            setPrice(prevPrice => {
-                const change = (Math.random() - 0.5) * 4;
-                let newPrice = prevPrice + change;
-                if (newPrice < 1) newPrice = 1;
-                if (newPrice > 200) newPrice = 200;
-                return Math.round(newPrice);
-            });
-        }, 1000);
-
-        return () => clearInterval(priceInterval);
-    }, []);
-
-    useEffect(() => {
-        if (userId) {
-            const unsub = onSnapshot(doc(db, "users", userId), (doc) => {
-                setUserData(doc.data());
-            });
-            return () => unsub();
+// Helper to process raw orders into a structured order book
+const buildOrderBook = (orders) => {
+    const book = {};
+    orders.forEach(order => {
+        const price = parseFloat(order.price).toFixed(2);
+        if (!book[price]) {
+            book[price] = { buy: 0, sell: 0, buyOrders: [], sellOrders: [] };
         }
-    }, [userId]);
-
-    const handleTrade = async (type) => {
-        if (!userData) return;
-
-        const currentPositions = userData.positions || [];
-        if (currentPositions.length >= 5) {
-            alert("You can have at most 5 open positions.");
-            return;
+        if (order.type === 'buy') {
+            book[price].buy += order.amount;
+            book[price].buyOrders.push(order);
+        } else {
+            book[price].sell += order.amount;
+            book[price].sellOrders.push(order);
         }
-        
-        const newPosition = { type, entryPrice: price };
-        const updatedPositions = [...currentPositions, newPosition];
+    });
 
-        try {
-            await updateDoc(doc(db, "users", userId), { positions: updatedPositions });
-        } catch (error) {
-            console.error("Error updating positions: ", error);
+    return Object.keys(book)
+        .map(price => ({ price, ...book[price] }))
+        .sort((a, b) => b.price - a.price);
+};
+
+const Trading = ({ currentUser, allPlayers, limitOrders, addLimitOrder }) => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [orderType, setOrderType] = useState('buy');
+    const [orderPrice, setOrderPrice] = useState('');
+
+    const { id, name, pnl, positions } = currentUser;
+    const rank = [...allPlayers].sort((a, b) => (b.pnl || 0) - (a.pnl || 0)).findIndex(p => p.id === id) + 1;
+
+    const openOrderModal = (type) => {
+        setOrderType(type);
+        setIsModalOpen(true);
+    };
+
+    const handlePlaceLimitOrder = () => {
+        // Amount is now fixed to 1
+        if (parseFloat(orderPrice) > 0) {
+            addLimitOrder({
+                id: `order_${Date.now()}`, // Unique ID for the order
+                type: orderType,
+                price: parseFloat(orderPrice),
+                amount: 1, // Amount is always 1
+                user: id
+            });
+            setOrderPrice('');
+            setIsModalOpen(false);
+        } else {
+            alert("Please enter a valid price.");
         }
     };
 
-    const closePosition = async (index) => {
-        if (!userData) return;
+    const handleTradeExecution = async (price, type) => {
+        if (positions.length >= 5) {
+            alert("You can have at most 5 open positions.");
+            return;
+        }
 
-        const positionToClose = userData.positions[index];
-        const profit = (positionToClose.type === 'long') 
-            ? price - positionToClose.entryPrice 
-            : positionToClose.entryPrice - price;
+        const newPosition = {
+            type: type === 'buy' ? 'LONG' : 'SHORT',
+            entryPrice: parseFloat(price),
+            id: `pos_${Date.now()}`
+        };
         
-        const newScore = userData.score + profit;
-        const updatedPositions = userData.positions.filter((_, i) => i !== index);
-
+        const userDocRef = doc(db, "users", id);
         try {
-            await updateDoc(doc(db, "users", userId), {
-                score: newScore,
-                positions: updatedPositions
+            await updateDoc(userDocRef, {
+                positions: arrayUnion(newPosition),
+                pnl: (pnl || 0) - 0.10 // Transaction cost
             });
+            // Here you would also update the order book state by removing the filled order
         } catch (error) {
+            console.error("Error executing trade: ", error);
+        }
+    };
+    
+    const closePosition = async (positionToClose) => {
+        const exitPrice = positionToClose.type === 'LONG' 
+            ? parseFloat(buildOrderBook(limitOrders).find(o => o.buy > 0)?.price || positionToClose.entryPrice)
+            : parseFloat(buildOrderBook(limitOrders).find(o => o.sell > 0)?.price || positionToClose.entryPrice);
+
+        const profit = positionToClose.type === 'LONG' 
+            ? exitPrice - positionToClose.entryPrice
+            : positionToClose.entryPrice - exitPrice;
+            
+        const userDocRef = doc(db, "users", id);
+        try {
+            await updateDoc(userDocRef, {
+                positions: arrayRemove(positionToClose),
+                pnl: (pnl || 0) + profit
+            });
+        } catch(error) {
             console.error("Error closing position: ", error);
         }
     };
 
-    if (!userData) return <div>Loading...</div>;
+
+    const displayedOrderBook = buildOrderBook(limitOrders);
 
     return (
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-            <h2>Welcome, {userData.name}</h2>
-            <h3>Score: {userData.score.toFixed(2)}</h3>
-            <h1>Current Price: {price}</h1>
-            <button onClick={() => handleTrade('long')} style={{ padding: '10px 20px', margin: '5px', backgroundColor: 'green', color: 'white' }}>Bid (Long)</button>
-            <button onClick={() => handleTrade('short')} style={{ padding: '10px 20px', margin: '5px', backgroundColor: 'red', color: 'white' }}>Ask (Short)</button>
-            
-            <div style={{ marginTop: '20px' }}>
-                <h3>Your Positions</h3>
-                {userData.positions && userData.positions.map((pos, index) => (
-                    <div key={index} style={{ border: '1px solid #ccc', padding: '10px', margin: '5px' }}>
-                        <p>Type: {pos.type}</p>
-                        <p>Entry Price: {pos.entryPrice}</p>
-                        <button onClick={() => closePosition(index)}>Close</button>
+        <div className="trading-container">
+            {isModalOpen && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <h2>Place {orderType === 'buy' ? 'Buy' : 'Sell'} Limit Order</h2>
+                        <input type="number" placeholder="Price" value={orderPrice} onChange={(e) => setOrderPrice(e.target.value)} className="modal-input"/>
+                        <div className="modal-actions">
+                            <button onClick={handlePlaceLimitOrder} className={`btn ${orderType}-btn`}>Place Order</button>
+                            <button onClick={() => setIsModalOpen(false)} className="btn cancel-btn">Cancel</button>
+                        </div>
                     </div>
-                ))}
+                </div>
+            )}
+
+            <div className="header">
+                 <div className="pnl-section"><span className="pnl-label">PNL</span><span className={`pnl-value ${pnl >= 0 ? 'positive' : 'negative'}`}>{pnl.toFixed(2)}</span></div>
+                 <div className="user-section"><span className="user-name">{name}</span></div>
+                <div className="rank-section"><span className="rank-label">Rank</span><span className="rank-value">#{rank || '-'}</span></div>
             </div>
 
-            <Link to="/leaderboard" style={{ display: 'block', marginTop: '20px' }}>View Leaderboard</Link>
+            <div className="positions-container">
+                <h4 className="positions-title">Your Positions ({positions.length}/5)</h4>
+                <div className="positions-list">
+                    {positions && positions.length > 0 ? positions.map((pos) => (
+                        <div key={pos.id} className={`position-item ${pos.type.toLowerCase()}`} onClick={() => closePosition(pos)}>
+                           Close {pos.type} @ {pos.entryPrice.toFixed(2)}
+                        </div>
+                    )) : <p>No open positions</p>}
+                </div>
+            </div>
+
+            <div className="order-book-container">
+                <div className="order-book-header">
+                    <div className="col buy-header">BUY</div>
+                    <div className="col price-header">PRICE</div>
+                    <div className="col sell-header">SELL</div>
+                </div>
+                <div className="order-book-body">
+                    {displayedOrderBook.length > 0 ? displayedOrderBook.map((order, index) => (
+                        <div className="order-row" key={index}>
+                            <div className="col buy-orders">
+                                {order.buy > 0 ? <button className="btn-order sell-btn-order" onClick={() => handleTradeExecution(order.price, 'sell')}>{order.buy}</button> : '-'}
+                            </div>
+                            <div className="col price">{order.price}</div>
+                            <div className="col sell-orders">
+                                {order.sell > 0 ? <button className="btn-order buy-btn-order" onClick={() => handleTradeExecution(order.price, 'buy')}>{order.sell}</button> : '-'}
+                            </div>
+                        </div>
+                    )) : <p className="no-orders-message">Order book is empty.</p>}
+                </div>
+            </div>
+
+            <div className="action-buttons">
+                <button className="btn limit-btn buy" onClick={() => openOrderModal('buy')}>Place Buy Limit</button>
+                <button className="btn limit-btn sell" onClick={() => openOrderModal('sell')}>Place Sell Limit</button>
+            </div>
+            
+            <Leaderboard allPlayers={allPlayers} currentUser={currentUser} />
         </div>
     );
 };
