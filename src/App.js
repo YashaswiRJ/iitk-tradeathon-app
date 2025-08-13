@@ -1,9 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Login from './components/Login';
-import Trading from './components/Trading';
-import Admin from './components/Admin';
-import Leaderboard from './components/Leaderboard';
+import Login from './Components/Login';
+import Trading from './Components/Trading';
+import Admin from './Components/Admin';
+import Leaderboard from './Components/Leaderboard';
 
 function App() {
   return (
